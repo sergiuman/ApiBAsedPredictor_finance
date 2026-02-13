@@ -1,0 +1,36 @@
+name: Daily Signal
+
+on:
+  schedule:
+    # Run daily at 09:00 Europe/London (UTC+0 in winter, UTC+1 in summer)
+    # Using 09:00 UTC; adjust to 08:00 UTC during BST if needed
+    - cron: "0 9 * * 1-5"  # Weekdays only (Mon-Fri)
+  workflow_dispatch: {}  # Allow manual trigger
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily signal
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4o-mini' }}
+          TOPIC: ${{ secrets.TOPIC || 'Microsoft' }}
+          TICKER: ${{ secrets.TICKER || 'MSFT' }}
+          NEWS_LOOKBACK_HOURS: ${{ secrets.NEWS_LOOKBACK_HOURS || '24' }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python src/main.py
