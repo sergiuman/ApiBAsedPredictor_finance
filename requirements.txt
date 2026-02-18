@@ -3,4 +3,5 @@ yfinance>=0.2.30
 feedparser>=6.0.0
 requests>=2.31.0
 python-dotenv>=1.0.0
+vaderSentiment>=3.3.2
 pytest>=7.0.0

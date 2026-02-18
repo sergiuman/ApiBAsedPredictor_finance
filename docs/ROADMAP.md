@@ -39,8 +39,8 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 
 ## Domain: News Ingestion (`src/news.py`)
 
-### N1 — Add Sentiment Pre-filter
-**Goal:** Score each headline with a lightweight local model (e.g., VADER or TextBlob) before sending to OpenAI. Filter out near-neutral articles to reduce token cost.
+### ~~N1 — Add Sentiment Pre-filter~~ ✅ DONE
+**Goal:** Score each headline with VADER before sending to OpenAI. Filter out near-neutral articles to reduce token cost.
 **Acceptance:** New optional `pre_filter_sentiment` config option. Tested with mocked VADER scores.
 **Complexity:** Low — `vaderSentiment` or `textblob` is a small pip install.
 

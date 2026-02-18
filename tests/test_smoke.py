@@ -16,6 +16,7 @@ from src.ai_analyze import (
     _rule_based_fallback,
 )
 from src.main import combine_signals
+from src.news import _pre_filter_by_sentiment
 
 
 # ---------------------------------------------------------------------------
@@ -193,3 +194,60 @@ class TestDisclaimer:
     def test_disclaimer_not_empty(self) -> None:
         assert len(DISCLAIMER) > 50
         assert "financial advice" in DISCLAIMER.lower() or "NOT" in DISCLAIMER
+
+
+# ---------------------------------------------------------------------------
+# Sentiment pre-filter (N1)
+# ---------------------------------------------------------------------------
+
+class TestSentimentPreFilter:
+    def _article(self, title: str, summary: str = "") -> Article:
+        return Article(title, "Src", "2024-01-01", summary, "https://example.com/1")
+
+    def _mock_analyzer(self, score: float) -> MagicMock:
+        analyzer = MagicMock()
+        analyzer.polarity_scores.return_value = {"compound": score}
+        return analyzer
+
+    def test_strong_positive_kept(self) -> None:
+        articles = [self._article("Stock surges on record earnings")]
+        with patch("src.news.SentimentIntensityAnalyzer" if False else "vaderSentiment.vaderSentiment.SentimentIntensityAnalyzer") as mock_cls:
+            mock_cls.return_value = self._mock_analyzer(0.8)
+            with patch.dict("sys.modules", {"vaderSentiment": MagicMock(), "vaderSentiment.vaderSentiment": MagicMock(SentimentIntensityAnalyzer=mock_cls)}):
+                result = _pre_filter_by_sentiment(articles, threshold=0.05)
+        assert len(result) == 1
+
+    def test_near_neutral_dropped(self) -> None:
+        articles = [self._article("Company holds annual meeting")]
+        with patch("vaderSentiment.vaderSentiment.SentimentIntensityAnalyzer") as mock_cls:
+            mock_cls.return_value = self._mock_analyzer(0.02)
+            with patch.dict("sys.modules", {"vaderSentiment": MagicMock(), "vaderSentiment.vaderSentiment": MagicMock(SentimentIntensityAnalyzer=mock_cls)}):
+                result = _pre_filter_by_sentiment(articles, threshold=0.05)
+        assert len(result) == 0
+
+    def test_strong_negative_kept(self) -> None:
+        articles = [self._article("Massive layoffs hit company amid losses")]
+        with patch("vaderSentiment.vaderSentiment.SentimentIntensityAnalyzer") as mock_cls:
+            mock_cls.return_value = self._mock_analyzer(-0.7)
+            with patch.dict("sys.modules", {"vaderSentiment": MagicMock(), "vaderSentiment.vaderSentiment": MagicMock(SentimentIntensityAnalyzer=mock_cls)}):
+                result = _pre_filter_by_sentiment(articles, threshold=0.05)
+        assert len(result) == 1
+
+    def test_empty_title_article_kept(self) -> None:
+        articles = [Article("", "Src", "2024-01-01", "", "https://example.com/empty")]
+        with patch("vaderSentiment.vaderSentiment.SentimentIntensityAnalyzer") as mock_cls:
+            mock_cls.return_value = self._mock_analyzer(0.0)
+            with patch.dict("sys.modules", {"vaderSentiment": MagicMock(), "vaderSentiment.vaderSentiment": MagicMock(SentimentIntensityAnalyzer=mock_cls)}):
+                result = _pre_filter_by_sentiment(articles, threshold=0.05)
+        assert len(result) == 1
+
+    def test_import_error_returns_all(self) -> None:
+        articles = [self._article("Some headline"), self._article("Another")]
+        with patch.dict("sys.modules", {"vaderSentiment": None, "vaderSentiment.vaderSentiment": None}):
+            result = _pre_filter_by_sentiment(articles, threshold=0.05)
+        assert len(result) == 2
+
+    def test_config_fields_default_off(self) -> None:
+        cfg = Config()
+        assert cfg.pre_filter_sentiment is False
+        assert cfg.sentiment_filter_threshold == 0.05

@@ -44,6 +44,12 @@ class Config:
         default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     )
     newsapi_key: str = field(default_factory=lambda: os.getenv("NEWSAPI_KEY", ""))
+    pre_filter_sentiment: bool = field(
+        default_factory=lambda: os.getenv("PRE_FILTER_SENTIMENT", "false").lower() == "true"
+    )
+    sentiment_filter_threshold: float = field(
+        default_factory=lambda: float(os.getenv("SENTIMENT_FILTER_THRESHOLD", "0.05"))
+    )
     telegram_bot_token: str = field(
         default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", "")
     )

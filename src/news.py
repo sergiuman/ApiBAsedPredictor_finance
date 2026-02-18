@@ -160,6 +160,45 @@ def _filter_by_lookback(articles: list[Article], hours: int) -> list[Article]:
 
 
 # ---------------------------------------------------------------------------
+# Sentiment pre-filter (optional, requires vaderSentiment)
+# ---------------------------------------------------------------------------
+
+def _pre_filter_by_sentiment(articles: list[Article], threshold: float) -> list[Article]:
+    """Drop near-neutral articles using VADER compound score.
+
+    Keeps articles where |compound| >= threshold. Articles that cannot be
+    scored (empty text) are kept. Falls back to returning all articles if
+    vaderSentiment is not installed.
+    """
+    try:
+        from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer  # type: ignore[import]
+    except ImportError:
+        logger.warning("vaderSentiment not installed; skipping sentiment pre-filter")
+        return articles
+
+    analyzer = SentimentIntensityAnalyzer()
+    kept: list[Article] = []
+    dropped = 0
+    for art in articles:
+        text = " ".join(part for part in [art.title, art.summary] if part).strip()
+        if not text:
+            kept.append(art)
+            continue
+        score = analyzer.polarity_scores(text)["compound"]
+        if abs(score) >= threshold:
+            kept.append(art)
+        else:
+            dropped += 1
+            logger.debug("Filtered near-neutral article (score=%.3f): %s", score, art.title[:60])
+
+    logger.info(
+        "Sentiment pre-filter: kept %d / %d articles (threshold=%.2f, dropped=%d)",
+        len(kept), len(articles), threshold, dropped,
+    )
+    return kept
+
+
+# ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
 
@@ -180,6 +219,9 @@ def fetch_news(cfg: Config) -> list[Article]:
 
     articles = _deduplicate(articles)
     articles = _filter_by_lookback(articles, cfg.news_lookback_hours)
+
+    if cfg.pre_filter_sentiment:
+        articles = _pre_filter_by_sentiment(articles, cfg.sentiment_filter_threshold)
 
     # Sort by published time (newest first), unknowns at end
     articles.sort(key=lambda a: a.published or "0000", reverse=True)
