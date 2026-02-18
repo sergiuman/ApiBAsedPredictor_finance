@@ -79,6 +79,33 @@ def _compute_bollinger_bands(
     return round(upper, 2), round(middle, 2), round(lower, 2), position
 
 
+def _compute_volume(volume: pd.Series, period: int = 10) -> tuple[float, str]:
+    """Compute 10-day average volume and classify today's relative volume.
+
+    Returns (vol_10d_avg, vol_vs_avg).
+    vol_vs_avg: "high" if today > 1.5x avg, "low" if today < 0.75x avg, else "normal".
+    Returns (0.0, "normal") when volume data is unavailable.
+    """
+    if len(volume) < 1 or volume.sum() == 0:
+        return 0.0, "normal"
+
+    window = min(period, len(volume))
+    vol_10d_avg = float(volume.tail(window).mean())
+    today_vol = float(volume.iloc[-1])
+
+    if vol_10d_avg == 0:
+        return 0.0, "normal"
+
+    if today_vol > 1.5 * vol_10d_avg:
+        vol_vs_avg = "high"
+    elif today_vol < 0.75 * vol_10d_avg:
+        vol_vs_avg = "low"
+    else:
+        vol_vs_avg = "normal"
+
+    return round(vol_10d_avg, 0), vol_vs_avg
+
+
 @dataclass
 class MarketData:
     """Computed market indicators for a ticker."""
@@ -95,6 +122,8 @@ class MarketData:
     bb_middle: float     # middle Bollinger Band (20-day SMA)
     bb_lower: float      # lower Bollinger Band (20-day SMA - 2σ)
     bb_position: str     # "above_upper" | "inside" | "below_lower"
+    vol_10d_avg: float   # 10-day average volume
+    vol_vs_avg: str      # "high" | "normal" | "low"
     prices_available: int  # number of trading days we got
 
     def to_dict(self) -> dict[str, Any]:
@@ -139,6 +168,7 @@ def fetch_market_data(cfg: Config) -> MarketData:
 
     rsi_14 = _compute_rsi(close)
     bb_upper, bb_middle, bb_lower, bb_position = _compute_bollinger_bands(close)
+    vol_10d_avg, vol_vs_avg = _compute_volume(hist["Volume"])
 
     md = MarketData(
         ticker=cfg.ticker,
@@ -153,6 +183,8 @@ def fetch_market_data(cfg: Config) -> MarketData:
         bb_middle=bb_middle,
         bb_lower=bb_lower,
         bb_position=bb_position,
+        vol_10d_avg=vol_10d_avg,
+        vol_vs_avg=vol_vs_avg,
         prices_available=len(close),
     )
 

@@ -11,7 +11,7 @@ import pandas as pd
 
 from src.utils import Config, DISCLAIMER
 from src.news import Article, _deduplicate
-from src.market import MarketData, _compute_rsi, _compute_bollinger_bands
+from src.market import MarketData, _compute_rsi, _compute_bollinger_bands, _compute_volume
 from src.ai_analyze import (
     AnalysisResult,
     _parse_analysis,
@@ -145,6 +145,8 @@ class TestRuleBased:
             bb_middle=100.0,
             bb_lower=95.0,
             bb_position="inside",
+            vol_10d_avg=1_000_000.0,
+            vol_vs_avg="normal",
             prices_available=30,
         )
 
@@ -177,7 +179,7 @@ class TestCombineSignals:
         )
 
     def _market(self, vs_sma: str, ret: float) -> MarketData:
-        return MarketData("TEST", 100.0, "2024-01-01", 99.0, 98.0, vs_sma, ret, 50.0, 105.0, 100.0, 95.0, "inside", 30)
+        return MarketData("TEST", 100.0, "2024-01-01", 99.0, 98.0, vs_sma, ret, 50.0, 105.0, 100.0, 95.0, "inside", 1_000_000.0, "normal", 30)
 
     def test_all_bullish(self) -> None:
         assert combine_signals(self._ai("likely_up"), self._market("above", 1.0)) == "likely_up"
@@ -196,6 +198,54 @@ class TestCombineSignals:
 # ---------------------------------------------------------------------------
 # Disclaimer presence
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Volume analysis (M3)
+# ---------------------------------------------------------------------------
+
+class TestVolumeAnalysis:
+    def _series(self, volumes: list[float]) -> pd.Series:
+        return pd.Series(volumes, dtype=float)
+
+    def test_normal_volume_classified(self) -> None:
+        # Today's volume equal to avg → "normal"
+        vols = [1_000_000.0] * 10
+        avg, label = _compute_volume(self._series(vols))
+        assert label == "normal"
+        assert avg == 1_000_000.0
+
+    def test_high_volume_classified(self) -> None:
+        # Today's volume > 1.5x avg
+        vols = [1_000_000.0] * 9 + [2_000_000.0]
+        _, label = _compute_volume(self._series(vols))
+        assert label == "high"
+
+    def test_low_volume_classified(self) -> None:
+        # Today's volume < 0.75x avg
+        vols = [1_000_000.0] * 9 + [500_000.0]
+        _, label = _compute_volume(self._series(vols))
+        assert label == "low"
+
+    def test_uses_last_10_days(self) -> None:
+        # 20 days of data; only last 10 should matter
+        old_vols = [10_000_000.0] * 10   # old high volume ignored
+        recent_vols = [1_000_000.0] * 9 + [2_000_000.0]
+        avg, label = _compute_volume(self._series(old_vols + recent_vols))
+        assert label == "high"
+        assert avg == pytest.approx(1_100_000.0)
+
+    def test_zero_volume_returns_normal(self) -> None:
+        vols = [0.0] * 10
+        avg, label = _compute_volume(self._series(vols))
+        assert avg == 0.0
+        assert label == "normal"
+
+    def test_fewer_than_period_uses_available(self) -> None:
+        vols = [1_000_000.0] * 5
+        avg, label = _compute_volume(self._series(vols))
+        assert avg == 1_000_000.0
+        assert label == "normal"
+
 
 # ---------------------------------------------------------------------------
 # Bollinger Bands (M2)

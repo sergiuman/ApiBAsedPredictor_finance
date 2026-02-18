@@ -20,7 +20,7 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 **Acceptance:** New fields on `MarketData`. Included in AI prompt. Tested.
 **Complexity:** Low.
 
-### M3 — Add Volume Analysis
+### ~~M3 — Add Volume Analysis~~ ✅ DONE
 **Goal:** Include average 10-day volume and compare today's volume to the average.
 **Acceptance:** `vol_10d_avg` and `vol_vs_avg` ("high" | "normal" | "low") fields on `MarketData`.
 **Complexity:** Low.

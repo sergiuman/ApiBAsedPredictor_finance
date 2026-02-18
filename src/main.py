@@ -82,6 +82,8 @@ BB Upper (20):   ${market.bb_upper}
 BB Middle (20):  ${market.bb_middle}
 BB Lower (20):   ${market.bb_lower}
 BB Position:     {market.bb_position.replace("_", " ").upper()}
+10-Day Avg Vol:  {market.vol_10d_avg:,.0f}
+Vol vs Avg:      {market.vol_vs_avg.upper()}
 
 --- AI ANALYSIS ---
 News Sentiment:  {ai.news_sentiment.upper()}
