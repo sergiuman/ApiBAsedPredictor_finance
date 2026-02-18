@@ -78,6 +78,10 @@ Last Close:      ${market.last_close} ({market.last_close_date})
 Close vs 7d SMA: {market.close_vs_sma7.upper()}
 7-Day Return:    {market.return_7d_pct}%
 RSI (14):        {market.rsi_14}{"  ← overbought" if market.rsi_14 > 70 else "  ← oversold" if market.rsi_14 < 30 else ""}
+BB Upper (20):   ${market.bb_upper}
+BB Middle (20):  ${market.bb_middle}
+BB Lower (20):   ${market.bb_lower}
+BB Position:     {market.bb_position.replace("_", " ").upper()}
 
 --- AI ANALYSIS ---
 News Sentiment:  {ai.news_sentiment.upper()}

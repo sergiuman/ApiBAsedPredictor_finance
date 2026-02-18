@@ -11,7 +11,7 @@ import pandas as pd
 
 from src.utils import Config, DISCLAIMER
 from src.news import Article, _deduplicate
-from src.market import MarketData, _compute_rsi
+from src.market import MarketData, _compute_rsi, _compute_bollinger_bands
 from src.ai_analyze import (
     AnalysisResult,
     _parse_analysis,
@@ -141,6 +141,10 @@ class TestRuleBased:
             close_vs_sma7=close_vs_sma7,
             return_7d_pct=return_7d,
             rsi_14=50.0,
+            bb_upper=105.0,
+            bb_middle=100.0,
+            bb_lower=95.0,
+            bb_position="inside",
             prices_available=30,
         )
 
@@ -173,7 +177,7 @@ class TestCombineSignals:
         )
 
     def _market(self, vs_sma: str, ret: float) -> MarketData:
-        return MarketData("TEST", 100.0, "2024-01-01", 99.0, 98.0, vs_sma, ret, 50.0, 30)
+        return MarketData("TEST", 100.0, "2024-01-01", 99.0, 98.0, vs_sma, ret, 50.0, 105.0, 100.0, 95.0, "inside", 30)
 
     def test_all_bullish(self) -> None:
         assert combine_signals(self._ai("likely_up"), self._market("above", 1.0)) == "likely_up"
@@ -192,6 +196,55 @@ class TestCombineSignals:
 # ---------------------------------------------------------------------------
 # Disclaimer presence
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Bollinger Bands (M2)
+# ---------------------------------------------------------------------------
+
+class TestBollingerBands:
+    def _series(self, prices: list[float]) -> pd.Series:
+        return pd.Series(prices, dtype=float)
+
+    def test_flat_prices_bands_straddle_mean(self) -> None:
+        # All same price → std=0 → upper=lower=middle=price
+        prices = [100.0] * 20
+        upper, middle, lower, position = _compute_bollinger_bands(self._series(prices))
+        assert upper == middle == lower == 100.0
+        assert position == "inside"
+
+    def test_close_above_upper_position(self) -> None:
+        # Last price far above the band
+        prices = [100.0] * 19 + [200.0]
+        _, _, _, position = _compute_bollinger_bands(self._series(prices))
+        assert position == "above_upper"
+
+    def test_close_below_lower_position(self) -> None:
+        # Last price far below the band
+        prices = [100.0] * 19 + [0.0]
+        _, _, _, position = _compute_bollinger_bands(self._series(prices))
+        assert position == "below_lower"
+
+    def test_close_inside_position(self) -> None:
+        prices = [float(98 + i % 5) for i in range(20)]
+        upper, middle, lower, position = _compute_bollinger_bands(self._series(prices))
+        assert position == "inside"
+
+    def test_upper_greater_than_lower(self) -> None:
+        prices = [float(100 + (i % 3)) for i in range(25)]
+        upper, middle, lower, _ = _compute_bollinger_bands(self._series(prices))
+        assert upper >= middle >= lower
+
+    def test_fewer_than_period_uses_available(self) -> None:
+        # Only 10 points — should not raise, should use all 10
+        prices = [float(100 + i) for i in range(10)]
+        upper, middle, lower, _ = _compute_bollinger_bands(self._series(prices))
+        assert upper > lower
+
+    def test_middle_equals_window_mean(self) -> None:
+        prices = [float(90 + i) for i in range(20)]
+        _, middle, _, _ = _compute_bollinger_bands(self._series(prices))
+        assert middle == round(sum(prices) / len(prices), 2)
+
 
 # ---------------------------------------------------------------------------
 # RSI indicator (M1)

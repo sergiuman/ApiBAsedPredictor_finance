@@ -48,6 +48,37 @@ def _compute_rsi(close: pd.Series, period: int = 14) -> float:
     return round(100 - (100 / (1 + rs)), 2)
 
 
+def _compute_bollinger_bands(
+    close: pd.Series,
+    period: int = 20,
+    num_std: float = 2.0,
+) -> tuple[float, float, float, str]:
+    """Compute Bollinger Bands (20-day SMA ± 2 std deviations).
+
+    Returns (bb_upper, bb_middle, bb_lower, bb_position).
+    Uses all available data when fewer than period points exist.
+    bb_position: "above_upper" | "inside" | "below_lower"
+    """
+    window = min(period, len(close))
+    window_data = close.tail(window)
+
+    middle = float(window_data.mean())
+    std = float(window_data.std(ddof=1)) if window > 1 else 0.0
+
+    upper = middle + num_std * std
+    lower = middle - num_std * std
+
+    last = float(close.iloc[-1])
+    if last > upper:
+        position = "above_upper"
+    elif last < lower:
+        position = "below_lower"
+    else:
+        position = "inside"
+
+    return round(upper, 2), round(middle, 2), round(lower, 2), position
+
+
 @dataclass
 class MarketData:
     """Computed market indicators for a ticker."""
@@ -60,6 +91,10 @@ class MarketData:
     close_vs_sma7: str  # "above" or "below"
     return_7d_pct: float
     rsi_14: float        # 0-100; >70 overbought, <30 oversold
+    bb_upper: float      # upper Bollinger Band (20-day SMA + 2σ)
+    bb_middle: float     # middle Bollinger Band (20-day SMA)
+    bb_lower: float      # lower Bollinger Band (20-day SMA - 2σ)
+    bb_position: str     # "above_upper" | "inside" | "below_lower"
     prices_available: int  # number of trading days we got
 
     def to_dict(self) -> dict[str, Any]:
@@ -103,6 +138,7 @@ def fetch_market_data(cfg: Config) -> MarketData:
     return_7d_pct = round((last_close - price_7_ago) / price_7_ago * 100, 2)
 
     rsi_14 = _compute_rsi(close)
+    bb_upper, bb_middle, bb_lower, bb_position = _compute_bollinger_bands(close)
 
     md = MarketData(
         ticker=cfg.ticker,
@@ -113,6 +149,10 @@ def fetch_market_data(cfg: Config) -> MarketData:
         close_vs_sma7=close_vs_sma7,
         return_7d_pct=return_7d_pct,
         rsi_14=rsi_14,
+        bb_upper=bb_upper,
+        bb_middle=bb_middle,
+        bb_lower=bb_lower,
+        bb_position=bb_position,
         prices_available=len(close),
     )
 

@@ -63,6 +63,10 @@ def _build_prompt(articles: list[Article], market: MarketData, cfg: Config) -> s
         "close_vs_sma7": market.close_vs_sma7,
         "return_7d_pct": market.return_7d_pct,
         "rsi_14": market.rsi_14,
+        "bb_upper": market.bb_upper,
+        "bb_middle": market.bb_middle,
+        "bb_lower": market.bb_lower,
+        "bb_position": market.bb_position,
     }
 
     return f"""You are a financial analyst assistant. Analyze the following news headlines and market data for {cfg.topic} ({cfg.ticker}).

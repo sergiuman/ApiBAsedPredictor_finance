@@ -15,7 +15,7 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 **Acceptance:** `MarketData.rsi_14` field (float, 0-100). Report shows RSI. Tests cover boundary cases (overbought >70, oversold <30).
 **Complexity:** Low — pure pandas math, no new dependencies.
 
-### M2 — Add Bollinger Bands
+### ~~M2 — Add Bollinger Bands~~ ✅ DONE
 **Goal:** Compute 20-day Bollinger Bands (upper/lower/middle) and a `bb_position` field ("above_upper", "inside", "below_lower").
 **Acceptance:** New fields on `MarketData`. Included in AI prompt. Tested.
 **Complexity:** Low.
