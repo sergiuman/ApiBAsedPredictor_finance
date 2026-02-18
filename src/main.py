@@ -11,6 +11,7 @@ from src.news import fetch_news, Article
 from src.market import fetch_market_data, MarketData
 from src.ai_analyze import analyze, AnalysisResult
 from src.notify import send_telegram
+from src.history import append_signal_record
 
 
 _HIGH_CONVICTION_THRESHOLD = 70
@@ -158,6 +159,9 @@ def main() -> None:
 
     # 5. Combine signals
     final_signal = combine_signals(ai_result, market)
+
+    # 5a. Persist signal record for history / backtest
+    append_signal_record(cfg, market, ai_result, final_signal)
 
     # 6. Build and print report
     report = build_report(cfg, articles, market, ai_result, final_signal)

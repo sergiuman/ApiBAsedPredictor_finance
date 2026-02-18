@@ -97,7 +97,7 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 **Acceptance:** New signal values `"high_conviction_up"` / `"high_conviction_down"` for confidence ≥ 70 with technical confirmation.
 **Complexity:** Low.
 
-### S2 — Signal History & Accuracy Tracking
+### ~~S2 — Signal History & Accuracy Tracking~~ ✅ DONE
 **Goal:** Append each run's signal to `data/signal_history.jsonl`. After enough history, compare past signals to actual next-day returns.
 **Acceptance:** `data/signal_history.jsonl` updated each run. Optional `make backtest` command to compute accuracy.
 **Complexity:** Medium.

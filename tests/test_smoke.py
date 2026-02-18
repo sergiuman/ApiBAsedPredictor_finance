@@ -20,6 +20,7 @@ from src.ai_analyze import (
 )
 from src.main import combine_signals
 from src.news import _pre_filter_by_sentiment
+from src.history import append_signal_record, load_history
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +417,90 @@ class TestDisclaimer:
     def test_disclaimer_not_empty(self) -> None:
         assert len(DISCLAIMER) > 50
         assert "financial advice" in DISCLAIMER.lower() or "NOT" in DISCLAIMER
+
+
+# ---------------------------------------------------------------------------
+# Signal history (S2)
+# ---------------------------------------------------------------------------
+
+class TestSignalHistory:
+    def _market(self) -> MarketData:
+        return MarketData(
+            ticker="TEST",
+            last_close=100.0,
+            last_close_date="2024-01-15",
+            sma_7=99.0,
+            sma_21=98.0,
+            close_vs_sma7="above",
+            return_7d_pct=2.5,
+            rsi_14=55.0,
+            bb_upper=105.0,
+            bb_middle=100.0,
+            bb_lower=95.0,
+            bb_position="inside",
+            vol_10d_avg=1_000_000.0,
+            vol_vs_avg="normal",
+            prices_available=30,
+        )
+
+    def _ai(self) -> AnalysisResult:
+        return AnalysisResult(
+            news_sentiment="positive",
+            key_drivers=["strong earnings"],
+            risk_factors=["macro headwinds"],
+            directional_bias="likely_up",
+            confidence_0_100=75,
+            one_paragraph_rationale="Test rationale.",
+        )
+
+    def test_append_creates_file(self, tmp_path) -> None:
+        cfg = Config()
+        cfg.data_dir = tmp_path
+        append_signal_record(cfg, self._market(), self._ai(), "likely_up")
+        assert (tmp_path / "signal_history.jsonl").exists()
+
+    def test_append_writes_valid_json_with_expected_fields(self, tmp_path) -> None:
+        cfg = Config()
+        cfg.data_dir = tmp_path
+        append_signal_record(cfg, self._market(), self._ai(), "likely_up")
+        raw = (tmp_path / "signal_history.jsonl").read_text().strip()
+        record = json.loads(raw)
+        assert record["ticker"] == "TEST"
+        assert record["final_signal"] == "likely_up"
+        assert record["confidence_0_100"] == 75
+        assert record["last_close"] == 100.0
+        assert record["last_close_date"] == "2024-01-15"
+        assert "run_at" in record
+
+    def test_load_returns_empty_when_no_file(self, tmp_path) -> None:
+        cfg = Config()
+        cfg.data_dir = tmp_path
+        assert load_history(cfg) == []
+
+    def test_load_returns_all_appended_records(self, tmp_path) -> None:
+        cfg = Config()
+        cfg.data_dir = tmp_path
+        append_signal_record(cfg, self._market(), self._ai(), "likely_up")
+        append_signal_record(cfg, self._market(), self._ai(), "uncertain")
+        records = load_history(cfg)
+        assert len(records) == 2
+
+    def test_append_preserves_signal_order(self, tmp_path) -> None:
+        cfg = Config()
+        cfg.data_dir = tmp_path
+        append_signal_record(cfg, self._market(), self._ai(), "high_conviction_up")
+        append_signal_record(cfg, self._market(), self._ai(), "likely_down")
+        records = load_history(cfg)
+        assert records[0]["final_signal"] == "high_conviction_up"
+        assert records[1]["final_signal"] == "likely_down"
+
+    def test_load_skips_malformed_lines(self, tmp_path) -> None:
+        cfg = Config()
+        cfg.data_dir = tmp_path
+        hist_file = tmp_path / "signal_history.jsonl"
+        hist_file.write_text('{"valid": true}\nNOT VALID JSON\n{"also": "valid"}\n')
+        records = load_history(cfg)
+        assert len(records) == 2
 
 
 # ---------------------------------------------------------------------------
