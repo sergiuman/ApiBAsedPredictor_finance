@@ -68,7 +68,7 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 **Acceptance:** `_parse_analysis()` still validates fields but JSON parse errors should be eliminated. Tests updated.
 **Complexity:** Low — one-line change to the API call.
 
-### A2 — Confidence Threshold Filtering
+### ~~A2 — Confidence Threshold Filtering~~ ✅ DONE
 **Goal:** If `confidence_0_100 < CONFIDENCE_THRESHOLD` (default 40, configurable), override `directional_bias` to `"uncertain"`.
 **Acceptance:** New `CONFIDENCE_THRESHOLD` env var. Behavior tested.
 **Complexity:** Low.

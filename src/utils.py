@@ -44,6 +44,9 @@ class Config:
         default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     )
     newsapi_key: str = field(default_factory=lambda: os.getenv("NEWSAPI_KEY", ""))
+    confidence_threshold: int = field(
+        default_factory=lambda: int(os.getenv("CONFIDENCE_THRESHOLD", "40"))
+    )
     pre_filter_sentiment: bool = field(
         default_factory=lambda: os.getenv("PRE_FILTER_SENTIMENT", "false").lower() == "true"
     )

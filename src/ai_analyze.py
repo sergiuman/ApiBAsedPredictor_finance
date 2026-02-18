@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from openai import OpenAI
@@ -188,6 +188,21 @@ def _rule_based_fallback(articles: list[Article], market: MarketData) -> Analysi
 
 
 # ---------------------------------------------------------------------------
+# Confidence threshold filter
+# ---------------------------------------------------------------------------
+
+def _apply_confidence_threshold(result: AnalysisResult, threshold: int) -> AnalysisResult:
+    """Override directional_bias to 'uncertain' if confidence is below threshold."""
+    if result.confidence_0_100 < threshold:
+        logger.info(
+            "Confidence %d below threshold %d; overriding directional_bias to 'uncertain'",
+            result.confidence_0_100, threshold,
+        )
+        return replace(result, directional_bias="uncertain")
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
 
@@ -223,6 +238,7 @@ def analyze(
             raw = response.choices[0].message.content or ""
             logger.debug("Raw AI response: %s", raw[:500])
             result = _parse_analysis(raw)
+            result = _apply_confidence_threshold(result, cfg.confidence_threshold)
             logger.info(
                 "AI analysis: sentiment=%s, bias=%s, confidence=%d",
                 result.news_sentiment, result.directional_bias, result.confidence_0_100,

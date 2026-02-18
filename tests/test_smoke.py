@@ -16,6 +16,7 @@ from src.ai_analyze import (
     AnalysisResult,
     _parse_analysis,
     _rule_based_fallback,
+    _apply_confidence_threshold,
 )
 from src.main import combine_signals
 from src.news import _pre_filter_by_sentiment
@@ -209,6 +210,51 @@ class TestCombineSignals:
     def test_high_conviction_requires_technical_confirmation(self) -> None:
         # High confidence but conflicting technicals → uncertain, not high_conviction
         assert combine_signals(self._ai("likely_up", 90), self._market("below", -1.0)) == "uncertain"
+
+
+# ---------------------------------------------------------------------------
+# Confidence threshold filter (A2)
+# ---------------------------------------------------------------------------
+
+class TestConfidenceThreshold:
+    def _result(self, bias: str, confidence: int) -> AnalysisResult:
+        return AnalysisResult(
+            news_sentiment="positive",
+            key_drivers=["test"],
+            risk_factors=[],
+            directional_bias=bias,
+            confidence_0_100=confidence,
+            one_paragraph_rationale="test",
+        )
+
+    def test_above_threshold_bias_unchanged(self) -> None:
+        result = _apply_confidence_threshold(self._result("likely_up", 50), threshold=40)
+        assert result.directional_bias == "likely_up"
+
+    def test_below_threshold_overrides_to_uncertain(self) -> None:
+        result = _apply_confidence_threshold(self._result("likely_up", 30), threshold=40)
+        assert result.directional_bias == "uncertain"
+
+    def test_at_threshold_bias_unchanged(self) -> None:
+        # confidence == threshold → keep (only override when strictly less than)
+        result = _apply_confidence_threshold(self._result("likely_down", 40), threshold=40)
+        assert result.directional_bias == "likely_down"
+
+    def test_override_preserves_other_fields(self) -> None:
+        original = self._result("likely_up", 25)
+        result = _apply_confidence_threshold(original, threshold=40)
+        assert result.directional_bias == "uncertain"
+        assert result.news_sentiment == "positive"
+        assert result.confidence_0_100 == 25
+        assert result.key_drivers == ["test"]
+
+    def test_config_default_threshold_is_40(self) -> None:
+        cfg = Config()
+        assert cfg.confidence_threshold == 40
+
+    def test_zero_confidence_overrides(self) -> None:
+        result = _apply_confidence_threshold(self._result("likely_down", 0), threshold=40)
+        assert result.directional_bias == "uncertain"
 
 
 # ---------------------------------------------------------------------------
