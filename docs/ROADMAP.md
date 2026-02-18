@@ -63,8 +63,8 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 
 ## Domain: AI Analysis (`src/ai_analyze.py`)
 
-### A1 — Structured Outputs / JSON Schema Enforcement
-**Goal:** Use OpenAI's `response_format={"type": "json_object"}` or the `json_schema` response format to guarantee valid JSON and eliminate the retry+parse dance.
+### ~~A1 — Structured Outputs / JSON Schema Enforcement~~ ✅ DONE
+**Goal:** Use OpenAI's `response_format={"type": "json_object"}` to guarantee valid JSON and eliminate the retry+parse dance.
 **Acceptance:** `_parse_analysis()` still validates fields but JSON parse errors should be eliminated. Tests updated.
 **Complexity:** Low — one-line change to the API call.
 
