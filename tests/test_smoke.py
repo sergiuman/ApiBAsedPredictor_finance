@@ -7,9 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import pandas as pd
+
 from src.utils import Config, DISCLAIMER
 from src.news import Article, _deduplicate
-from src.market import MarketData
+from src.market import MarketData, _compute_rsi
 from src.ai_analyze import (
     AnalysisResult,
     _parse_analysis,
@@ -138,6 +140,7 @@ class TestRuleBased:
             sma_21=98.0,
             close_vs_sma7=close_vs_sma7,
             return_7d_pct=return_7d,
+            rsi_14=50.0,
             prices_available=30,
         )
 
@@ -170,7 +173,7 @@ class TestCombineSignals:
         )
 
     def _market(self, vs_sma: str, ret: float) -> MarketData:
-        return MarketData("TEST", 100.0, "2024-01-01", 99.0, 98.0, vs_sma, ret, 30)
+        return MarketData("TEST", 100.0, "2024-01-01", 99.0, 98.0, vs_sma, ret, 50.0, 30)
 
     def test_all_bullish(self) -> None:
         assert combine_signals(self._ai("likely_up"), self._market("above", 1.0)) == "likely_up"
@@ -189,6 +192,60 @@ class TestCombineSignals:
 # ---------------------------------------------------------------------------
 # Disclaimer presence
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# RSI indicator (M1)
+# ---------------------------------------------------------------------------
+
+class TestRSI:
+    def _series(self, prices: list[float]) -> pd.Series:
+        return pd.Series(prices, dtype=float)
+
+    def test_insufficient_data_returns_50(self) -> None:
+        # Fewer than period+1 (15) points → neutral fallback
+        result = _compute_rsi(self._series([100.0] * 10))
+        assert result == 50.0
+
+    def test_all_gains_returns_100(self) -> None:
+        # Monotonically increasing → no losses → RSI = 100
+        prices = [float(100 + i) for i in range(15)]
+        result = _compute_rsi(self._series(prices))
+        assert result == 100.0
+
+    def test_all_losses_returns_0(self) -> None:
+        # Monotonically decreasing → no gains → RSI = 0
+        prices = [float(114 - i) for i in range(15)]
+        result = _compute_rsi(self._series(prices))
+        assert result == 0.0
+
+    def test_neutral_alternating_near_50(self) -> None:
+        # Equal alternating gains and losses → RSI ≈ 50
+        prices = [100.0 + (1.0 if i % 2 == 0 else -1.0) * (i % 2) for i in range(15)]
+        prices = [100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 100.0,
+                  101.0, 100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 100.0]
+        result = _compute_rsi(self._series(prices))
+        assert abs(result - 50.0) < 1.0
+
+    def test_overbought_above_70(self) -> None:
+        # 13 gains, 1 loss → strong uptrend → RSI > 70
+        prices = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0,
+                  108.0, 107.0, 108.0, 109.0, 110.0, 111.0, 112.0]
+        result = _compute_rsi(self._series(prices))
+        assert result > 70.0
+
+    def test_oversold_below_30(self) -> None:
+        # 1 gain, 13 losses → strong downtrend → RSI < 30
+        prices = [112.0, 111.0, 110.0, 109.0, 108.0, 107.0, 106.0, 105.0,
+                  104.0, 105.0, 104.0, 103.0, 102.0, 101.0, 100.0]
+        result = _compute_rsi(self._series(prices))
+        assert result < 30.0
+
+    def test_result_in_valid_range(self) -> None:
+        prices = [100.0, 102.0, 101.0, 103.0, 102.0, 104.0, 103.0,
+                  105.0, 104.0, 106.0, 105.0, 107.0, 106.0, 108.0, 107.0]
+        result = _compute_rsi(self._series(prices))
+        assert 0.0 <= result <= 100.0
+
 
 class TestDisclaimer:
     def test_disclaimer_not_empty(self) -> None:

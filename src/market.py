@@ -9,11 +9,43 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import yfinance as yf
 
 from src.utils import Config
 
 logger = logging.getLogger("signal.market")
+
+
+def _compute_rsi(close: pd.Series, period: int = 14) -> float:
+    """Compute RSI using Wilder's smoothed moving average.
+
+    Returns 50.0 if there are fewer than period+1 data points.
+    Returns 100.0 when there are no losses (all gains).
+    Returns 0.0 when there are no gains (all losses).
+    """
+    if len(close) < period + 1:
+        logger.warning("Insufficient data for RSI (%d points); returning 50", len(close))
+        return 50.0
+
+    delta = close.diff().dropna()
+    gains = delta.clip(lower=0)
+    losses = (-delta).clip(lower=0)
+
+    # Seed: simple mean over the first `period` changes
+    avg_gain = float(gains.iloc[:period].mean())
+    avg_loss = float(losses.iloc[:period].mean())
+
+    # Wilder's smoothing for any data beyond the seed window
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + float(gains.iloc[i])) / period
+        avg_loss = (avg_loss * (period - 1) + float(losses.iloc[i])) / period
+
+    if avg_loss == 0:
+        return 100.0
+
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 2)
 
 
 @dataclass
@@ -27,6 +59,7 @@ class MarketData:
     sma_21: float
     close_vs_sma7: str  # "above" or "below"
     return_7d_pct: float
+    rsi_14: float        # 0-100; >70 overbought, <30 oversold
     prices_available: int  # number of trading days we got
 
     def to_dict(self) -> dict[str, Any]:
@@ -69,6 +102,8 @@ def fetch_market_data(cfg: Config) -> MarketData:
     price_7_ago = float(close.iloc[-8]) if len(close) >= 8 else float(close.iloc[0])
     return_7d_pct = round((last_close - price_7_ago) / price_7_ago * 100, 2)
 
+    rsi_14 = _compute_rsi(close)
+
     md = MarketData(
         ticker=cfg.ticker,
         last_close=round(last_close, 2),
@@ -77,6 +112,7 @@ def fetch_market_data(cfg: Config) -> MarketData:
         sma_21=round(sma_21, 2),
         close_vs_sma7=close_vs_sma7,
         return_7d_pct=return_7d_pct,
+        rsi_14=rsi_14,
         prices_available=len(close),
     )
 
@@ -90,7 +126,7 @@ def fetch_market_data(cfg: Config) -> MarketData:
         logger.debug("Could not write market cache: %s", exc)
 
     logger.info(
-        "Market data: last_close=%.2f, sma7=%.2f, sma21=%.2f, 7d_return=%.2f%%",
-        md.last_close, md.sma_7, md.sma_21, md.return_7d_pct,
+        "Market data: last_close=%.2f, sma7=%.2f, sma21=%.2f, 7d_return=%.2f%%, rsi14=%.2f",
+        md.last_close, md.sma_7, md.sma_21, md.return_7d_pct, md.rsi_14,
     )
     return md

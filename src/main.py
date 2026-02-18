@@ -77,6 +77,7 @@ Last Close:      ${market.last_close} ({market.last_close_date})
 21-Day SMA:      ${market.sma_21}
 Close vs 7d SMA: {market.close_vs_sma7.upper()}
 7-Day Return:    {market.return_7d_pct}%
+RSI (14):        {market.rsi_14}{"  ← overbought" if market.rsi_14 > 70 else "  ← oversold" if market.rsi_14 < 30 else ""}
 
 --- AI ANALYSIS ---
 News Sentiment:  {ai.news_sentiment.upper()}

@@ -10,7 +10,7 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 
 ## Domain: Market Data (`src/market.py`)
 
-### M1 — Add RSI Indicator
+### ~~M1 — Add RSI Indicator~~ ✅ DONE
 **Goal:** Compute the 14-day Relative Strength Index and include it in `MarketData`.
 **Acceptance:** `MarketData.rsi_14` field (float, 0-100). Report shows RSI. Tests cover boundary cases (overbought >70, oversold <30).
 **Complexity:** Low — pure pandas math, no new dependencies.
