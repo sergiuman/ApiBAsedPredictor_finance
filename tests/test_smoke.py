@@ -168,13 +168,13 @@ class TestRuleBased:
 # ---------------------------------------------------------------------------
 
 class TestCombineSignals:
-    def _ai(self, bias: str) -> AnalysisResult:
+    def _ai(self, bias: str, confidence: int = 50) -> AnalysisResult:
         return AnalysisResult(
             news_sentiment="neutral",
             key_drivers=[],
             risk_factors=[],
             directional_bias=bias,
-            confidence_0_100=50,
+            confidence_0_100=confidence,
             one_paragraph_rationale="test",
         )
 
@@ -193,6 +193,22 @@ class TestCombineSignals:
 
     def test_ai_uncertain(self) -> None:
         assert combine_signals(self._ai("uncertain"), self._market("above", 1.0)) == "uncertain"
+
+    def test_high_conviction_up(self) -> None:
+        assert combine_signals(self._ai("likely_up", 70), self._market("above", 1.0)) == "high_conviction_up"
+
+    def test_high_conviction_down(self) -> None:
+        assert combine_signals(self._ai("likely_down", 75), self._market("below", -1.0)) == "high_conviction_down"
+
+    def test_confidence_below_threshold_stays_likely_up(self) -> None:
+        assert combine_signals(self._ai("likely_up", 69), self._market("above", 1.0)) == "likely_up"
+
+    def test_confidence_at_threshold_is_high_conviction(self) -> None:
+        assert combine_signals(self._ai("likely_up", 70), self._market("above", 1.0)) == "high_conviction_up"
+
+    def test_high_conviction_requires_technical_confirmation(self) -> None:
+        # High confidence but conflicting technicals → uncertain, not high_conviction
+        assert combine_signals(self._ai("likely_up", 90), self._market("below", -1.0)) == "uncertain"
 
 
 # ---------------------------------------------------------------------------

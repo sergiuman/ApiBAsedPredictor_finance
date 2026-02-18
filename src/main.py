@@ -13,26 +13,35 @@ from src.ai_analyze import analyze, AnalysisResult
 from src.notify import send_telegram
 
 
+_HIGH_CONVICTION_THRESHOLD = 70
+
+
 def combine_signals(ai: AnalysisResult, market: MarketData) -> str:
-    """Combine AI directional bias with basic trend for final signal.
+    """Combine AI directional bias with technical trend for final signal.
 
     Rules:
-    - AI says likely_up AND close > 7d SMA AND 7d return > 0 => likely_up
-    - AI says likely_down AND close < 7d SMA AND 7d return < 0 => likely_down
+    - AI=likely_up AND above SMA7 AND return>0 AND confidence>=70 => high_conviction_up
+    - AI=likely_up AND above SMA7 AND return>0                     => likely_up
+    - AI=likely_down AND below SMA7 AND return<0 AND confidence>=70 => high_conviction_down
+    - AI=likely_down AND below SMA7 AND return<0                    => likely_down
     - Otherwise => uncertain
     """
-    if (
+    bullish = (
         ai.directional_bias == "likely_up"
         and market.close_vs_sma7 == "above"
         and market.return_7d_pct > 0
-    ):
-        return "likely_up"
-    elif (
+    )
+    bearish = (
         ai.directional_bias == "likely_down"
         and market.close_vs_sma7 == "below"
         and market.return_7d_pct < 0
-    ):
-        return "likely_down"
+    )
+    high_conviction = ai.confidence_0_100 >= _HIGH_CONVICTION_THRESHOLD
+
+    if bullish:
+        return "high_conviction_up" if high_conviction else "likely_up"
+    elif bearish:
+        return "high_conviction_down" if high_conviction else "likely_down"
     else:
         return "uncertain"
 
@@ -43,6 +52,8 @@ def format_signal_label(signal: str) -> str:
         "likely_up": "LIKELY UP",
         "likely_down": "LIKELY DOWN",
         "uncertain": "UNCERTAIN",
+        "high_conviction_up": "HIGH CONVICTION UP",
+        "high_conviction_down": "HIGH CONVICTION DOWN",
     }
     return labels.get(signal, signal.upper())
 

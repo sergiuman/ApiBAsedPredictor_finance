@@ -92,7 +92,7 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 
 ## Domain: Signal Logic (`src/main.py`)
 
-### S1 — Confidence-Weighted Signal
+### ~~S1 — Confidence-Weighted Signal~~ ✅ DONE
 **Goal:** Include `confidence_0_100` in the final signal decision. High-confidence AI + confirming technicals = stronger signal label.
 **Acceptance:** New signal values `"high_conviction_up"` / `"high_conviction_down"` for confidence ≥ 70 with technical confirmation.
 **Complexity:** Low.
