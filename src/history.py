@@ -50,7 +50,7 @@ def append_signal_record(
     try:
         with history_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record) + "\n")
-        logger.info("Signal record appended → %s", history_path)
+        logger.info("Signal record appended -> %s", history_path)
     except OSError as exc:
         logger.warning("Could not write signal history: %s", exc)
 
