@@ -150,10 +150,12 @@ See `CLAUDE.md` for architecture, conventions, and agent task guides.
 **Acceptance:** `docker compose up` runs the pipeline. `.env` passed via `env_file`. Data dir mounted as volume.
 **Complexity:** Medium.
 
-### I4 — Web Dashboard
+### I4 — Web Dashboard *(partial — Streamlit UI in `src/app.py`)*
 **Goal:** Simple read-only HTML dashboard served by FastAPI that shows the last signal, history chart, and raw report.
 **Acceptance:** `src/server.py` with FastAPI app. `make serve` command. Reads from `data/signal_history.jsonl`.
 **Complexity:** High — new dependency (FastAPI, uvicorn), frontend HTML.
+
+> **Progress:** A lighter Streamlit UI (`src/app.py`, `make ui`) ships the interactive analysis flow locally — sidebar inputs, coloured signal banner, metrics, AI sections, and news expander. A full FastAPI dashboard with history charts remains future work.
 
 ---
 

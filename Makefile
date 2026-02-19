@@ -1,4 +1,4 @@
-.PHONY: run test setup clean backtest
+.PHONY: run test setup clean backtest ui
 
 setup:
 	python -m venv .venv
@@ -14,6 +14,9 @@ test:
 
 backtest:
 	python src/history.py
+
+ui:
+	streamlit run src/app.py
 
 clean:
 	rm -rf .venv __pycache__ src/__pycache__ tests/__pycache__ data/last_*.json

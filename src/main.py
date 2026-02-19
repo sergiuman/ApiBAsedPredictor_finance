@@ -121,8 +121,46 @@ Rationale:
     return report.strip()
 
 
+def run_pipeline(
+    cfg: Config,
+) -> tuple[list[Article], MarketData, AnalysisResult, str, str]:
+    """Run the analysis pipeline and return (articles, market, ai_result, final_signal, report).
+
+    Raises ValueError on market data failure so callers (Streamlit, tests) can
+    handle errors gracefully without triggering sys.exit().
+    """
+    # 1. Fetch news
+    try:
+        articles = fetch_news(cfg)
+    except Exception as exc:
+        logger.error("Failed to fetch news: %s", exc)
+        articles = []
+
+    if not articles:
+        logger.warning("No news articles found. Analysis will rely on market data only.")
+
+    # 2. Fetch market data — raise on failure (no sys.exit here)
+    try:
+        market = fetch_market_data(cfg)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Unexpected error fetching market data: {exc}") from exc
+
+    # 3. AI analysis
+    ai_result = analyze(articles, market, cfg)
+
+    # 4. Combine signals
+    final_signal = combine_signals(ai_result, market)
+
+    # 5. Build report
+    report = build_report(cfg, articles, market, ai_result, final_signal)
+
+    return articles, market, ai_result, final_signal, report
+
+
 def main() -> None:
-    """Run the daily signal pipeline."""
+    """Run the daily signal pipeline (CLI entry point)."""
     logger.info("Starting News + Market Daily Signal")
 
     # 1. Load and validate config
@@ -134,37 +172,20 @@ def main() -> None:
         logger.error("Fix the above issues in your .env file and retry.")
         sys.exit(1)
 
-    # 2. Fetch news
+    # 2-5. Run pipeline
     try:
-        articles = fetch_news(cfg)
-    except Exception as exc:
-        logger.error("Failed to fetch news: %s", exc)
-        articles = []
-
-    if not articles:
-        logger.warning("No news articles found. Analysis will rely on market data only.")
-
-    # 3. Fetch market data
-    try:
-        market = fetch_market_data(cfg)
+        articles, market, ai_result, final_signal, report = run_pipeline(cfg)
     except ValueError as exc:
-        logger.error("Market data error: %s", exc)
+        logger.error("Pipeline error: %s", exc)
         sys.exit(1)
     except Exception as exc:
-        logger.error("Unexpected error fetching market data: %s", exc)
+        logger.error("Unexpected pipeline error: %s", exc)
         sys.exit(1)
-
-    # 4. AI analysis
-    ai_result = analyze(articles, market, cfg)
-
-    # 5. Combine signals
-    final_signal = combine_signals(ai_result, market)
 
     # 5a. Persist signal record for history / backtest
     append_signal_record(cfg, market, ai_result, final_signal)
 
-    # 6. Build and print report
-    report = build_report(cfg, articles, market, ai_result, final_signal)
+    # 6. Print report
     print(report)
 
     # 7. Send to Telegram (optional)

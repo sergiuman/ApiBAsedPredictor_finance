@@ -18,7 +18,7 @@ from src.ai_analyze import (
     _rule_based_fallback,
     _apply_confidence_threshold,
 )
-from src.main import combine_signals
+from src.main import combine_signals, run_pipeline
 from src.news import _pre_filter_by_sentiment
 from src.history import append_signal_record, load_history
 
@@ -411,6 +411,92 @@ class TestRSI:
                   105.0, 104.0, 106.0, 105.0, 107.0, 106.0, 108.0, 107.0]
         result = _compute_rsi(self._series(prices))
         assert 0.0 <= result <= 100.0
+
+
+class TestRunPipeline:
+    """Tests for the run_pipeline() function extracted from main()."""
+
+    def _make_market(self) -> MarketData:
+        return MarketData(
+            ticker="TEST",
+            last_close=100.0,
+            last_close_date="2024-01-01",
+            sma_7=99.0,
+            sma_21=98.0,
+            close_vs_sma7="above",
+            return_7d_pct=1.5,
+            rsi_14=55.0,
+            bb_upper=105.0,
+            bb_middle=100.0,
+            bb_lower=95.0,
+            bb_position="inside",
+            vol_10d_avg=1_000_000.0,
+            vol_vs_avg="normal",
+            prices_available=30,
+        )
+
+    def _make_ai(self) -> AnalysisResult:
+        return AnalysisResult(
+            news_sentiment="positive",
+            key_drivers=["strong earnings"],
+            risk_factors=["macro risk"],
+            directional_bias="likely_up",
+            confidence_0_100=65,
+            one_paragraph_rationale="All looks good.",
+        )
+
+    def test_run_pipeline_returns_five_tuple(self) -> None:
+        """run_pipeline should return a 5-tuple of the expected types."""
+        cfg = Config()
+        cfg.openai_api_key = "sk-test"
+        cfg.topic = "Microsoft"
+        cfg.ticker = "MSFT"
+
+        with (
+            patch("src.main.fetch_news", return_value=[]),
+            patch("src.main.fetch_market_data", return_value=self._make_market()),
+            patch("src.main.analyze", return_value=self._make_ai()),
+        ):
+            result = run_pipeline(cfg)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 5
+        articles, market, ai_result, final_signal, report = result
+        assert isinstance(articles, list)
+        assert isinstance(market, MarketData)
+        assert isinstance(ai_result, AnalysisResult)
+        assert isinstance(final_signal, str)
+        assert isinstance(report, str)
+
+    def test_run_pipeline_market_error_raises(self) -> None:
+        """run_pipeline should raise ValueError (not sys.exit) on market failure."""
+        cfg = Config()
+        cfg.openai_api_key = "sk-test"
+        cfg.topic = "Microsoft"
+        cfg.ticker = "INVALID"
+
+        with (
+            patch("src.main.fetch_news", return_value=[]),
+            patch("src.main.fetch_market_data", side_effect=ValueError("No data for ticker")),
+        ):
+            with pytest.raises(ValueError, match="No data for ticker"):
+                run_pipeline(cfg)
+
+    def test_run_pipeline_report_contains_disclaimer(self) -> None:
+        """The report returned by run_pipeline must contain the DISCLAIMER text."""
+        cfg = Config()
+        cfg.openai_api_key = "sk-test"
+        cfg.topic = "Microsoft"
+        cfg.ticker = "MSFT"
+
+        with (
+            patch("src.main.fetch_news", return_value=[]),
+            patch("src.main.fetch_market_data", return_value=self._make_market()),
+            patch("src.main.analyze", return_value=self._make_ai()),
+        ):
+            _, _, _, _, report = run_pipeline(cfg)
+
+        assert DISCLAIMER in report
 
 
 class TestDisclaimer:
