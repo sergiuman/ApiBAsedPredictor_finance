@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 import logging
 from datetime import datetime, timezone
@@ -11,7 +12,7 @@ from src.news import fetch_news, Article
 from src.market import fetch_market_data, MarketData
 from src.ai_analyze import analyze, AnalysisResult
 from src.notify import send_telegram
-from src.history import append_signal_record
+from src.history import append_signal_record, query_history_by_ticker, format_history_table
 
 
 _HIGH_CONVICTION_THRESHOLD = 70
@@ -73,6 +74,9 @@ def build_report(
     drivers_str = "\n".join(f"  - {d}" for d in ai.key_drivers) if ai.key_drivers else "  (none)"
     risks_str = "\n".join(f"  - {r}" for r in ai.risk_factors) if ai.risk_factors else "  (none)"
 
+    past_records = query_history_by_ticker(cfg, cfg.ticker)
+    history_table = format_history_table(past_records)
+
     report = f"""
 {'='*60}
   NEWS + MARKET DAILY SIGNAL
@@ -110,6 +114,9 @@ Risk Factors:
 
 Rationale:
   {ai.one_paragraph_rationale}
+
+--- PAST PREDICTIONS ({cfg.ticker}) ---
+{history_table}
 
 --- FINAL SIGNAL ---
 >>> {signal_label} <<<
@@ -161,6 +168,19 @@ def run_pipeline(
 
 def main() -> None:
     """Run the daily signal pipeline (CLI entry point)."""
+    parser = argparse.ArgumentParser(description="News + Market Daily Signal")
+    parser.add_argument(
+        "--history",
+        metavar="TICKER",
+        help="Print past predictions for TICKER and exit",
+    )
+    args = parser.parse_args()
+
+    if args.history:
+        cfg = Config()
+        print(format_history_table(query_history_by_ticker(cfg, args.history)))
+        return
+
     logger.info("Starting News + Market Daily Signal")
 
     # 1. Load and validate config

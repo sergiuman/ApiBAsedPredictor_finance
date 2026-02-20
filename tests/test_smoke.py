@@ -20,7 +20,7 @@ from src.ai_analyze import (
 )
 from src.main import combine_signals, run_pipeline
 from src.news import _pre_filter_by_sentiment
-from src.history import append_signal_record, load_history
+from src.history import append_signal_record, load_history, query_history_by_ticker, format_history_table
 
 
 # ---------------------------------------------------------------------------
@@ -644,3 +644,89 @@ class TestSentimentPreFilter:
         cfg = Config()
         assert cfg.pre_filter_sentiment is False
         assert cfg.sentiment_filter_threshold == 0.05
+
+
+# ---------------------------------------------------------------------------
+# History query (H1)
+# ---------------------------------------------------------------------------
+
+class TestHistoryQuery:
+    _FAKE_RECORDS = [
+        {
+            "run_at": "2024-01-01T09:00:00+00:00",
+            "ticker": "MSFT",
+            "final_signal": "likely_up",
+            "confidence_0_100": 65,
+            "last_close": 380.0,
+            "rsi_14": 55.0,
+        },
+        {
+            "run_at": "2024-01-02T09:00:00+00:00",
+            "ticker": "AAPL",
+            "final_signal": "uncertain",
+            "confidence_0_100": 45,
+            "last_close": 190.0,
+            "rsi_14": 50.0,
+        },
+        {
+            "run_at": "2024-01-03T09:00:00+00:00",
+            "ticker": "msft",
+            "final_signal": "likely_down",
+            "confidence_0_100": 70,
+            "last_close": 375.0,
+            "rsi_14": 42.0,
+        },
+    ]
+
+    def test_filter_returns_only_matching_ticker(self) -> None:
+        with patch("src.history.load_history", return_value=self._FAKE_RECORDS):
+            cfg = Config()
+            result = query_history_by_ticker(cfg, "MSFT")
+        assert len(result) == 2
+        assert all(r["ticker"].upper() == "MSFT" for r in result)
+
+    def test_filter_case_insensitive(self) -> None:
+        with patch("src.history.load_history", return_value=self._FAKE_RECORDS):
+            cfg = Config()
+            result_lower = query_history_by_ticker(cfg, "msft")
+            result_upper = query_history_by_ticker(cfg, "MSFT")
+        assert len(result_lower) == len(result_upper) == 2
+
+    def test_filter_returns_newest_first(self) -> None:
+        with patch("src.history.load_history", return_value=self._FAKE_RECORDS):
+            cfg = Config()
+            result = query_history_by_ticker(cfg, "MSFT")
+        # Record with run_at 2024-01-03 should come first (newest)
+        assert result[0]["run_at"] > result[1]["run_at"]
+
+    def test_filter_no_match_returns_empty(self) -> None:
+        with patch("src.history.load_history", return_value=self._FAKE_RECORDS):
+            cfg = Config()
+            result = query_history_by_ticker(cfg, "GOOG")
+        assert result == []
+
+    def test_format_table_no_records_returns_placeholder(self) -> None:
+        output = format_history_table([])
+        assert output == "(no history yet)"
+
+    def test_format_table_contains_expected_columns(self) -> None:
+        output = format_history_table(self._FAKE_RECORDS[:1])
+        assert "Date" in output
+        assert "Time UTC" in output
+        assert "Signal" in output
+        assert "Conf" in output
+        assert "Close" in output
+        assert "RSI" in output
+
+    def test_format_table_contains_record_data(self) -> None:
+        record = self._FAKE_RECORDS[0]
+        output = format_history_table([record])
+        assert "2024-01-01" in output
+        assert "likely_up" in output
+        assert "65" in output
+        assert "380.00" in output
+
+    def test_format_table_returns_string(self) -> None:
+        output = format_history_table(self._FAKE_RECORDS)
+        assert isinstance(output, str)
+        assert len(output) > 0

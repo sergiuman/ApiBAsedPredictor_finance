@@ -1,0 +1,29 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ui", "ui", "{FA674B5A-3394-926C-2B1E-70E5B00E4A5C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FinanceSignalUI", "ui\FinanceSignalUI\FinanceSignalUI.csproj", "{481EF233-E8F8-1845-E0D9-6BDD4E0DE4BD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{481EF233-E8F8-1845-E0D9-6BDD4E0DE4BD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{481EF233-E8F8-1845-E0D9-6BDD4E0DE4BD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{481EF233-E8F8-1845-E0D9-6BDD4E0DE4BD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{481EF233-E8F8-1845-E0D9-6BDD4E0DE4BD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{481EF233-E8F8-1845-E0D9-6BDD4E0DE4BD} = {FA674B5A-3394-926C-2B1E-70E5B00E4A5C}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {57087DF4-D396-4E2B-A01E-66C24A4C4E64}
+	EndGlobalSection
+EndGlobal

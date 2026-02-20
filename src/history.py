@@ -192,5 +192,75 @@ def _print_backtest_results(evaluated: list[dict]) -> None:
     )
 
 
+def query_history_by_ticker(cfg: Config, ticker: str) -> list[dict]:
+    """Return history records for a specific ticker, newest first.
+
+    Case-insensitive match on the ``ticker`` field.
+    """
+    records = load_history(cfg)
+    filtered = [r for r in records if r.get("ticker", "").upper() == ticker.upper()]
+    return list(reversed(filtered))
+
+
+def format_history_table(records: list[dict]) -> str:
+    """Format history records as a fixed-width ASCII table.
+
+    Columns: Date | Time UTC | Signal | Conf | Close | RSI
+    Returns ``(no history yet)`` when records is empty.
+    """
+    if not records:
+        return "(no history yet)"
+
+    col_widths = {
+        "date": 10,
+        "time": 8,
+        "signal": 22,
+        "conf": 4,
+        "close": 9,
+        "rsi": 6,
+    }
+
+    header = (
+        f"{'Date':<{col_widths['date']}}"
+        f"  {'Time UTC':<{col_widths['time']}}"
+        f"  {'Signal':<{col_widths['signal']}}"
+        f"  {'Conf':>{col_widths['conf']}}"
+        f"  {'Close':>{col_widths['close']}}"
+        f"  {'RSI':>{col_widths['rsi']}}"
+    )
+    sep = "-" * len(header)
+    rows: list[str] = [header, sep]
+
+    for r in records:
+        run_at = r.get("run_at", "")
+        try:
+            dt = datetime.fromisoformat(run_at)
+            date_str = dt.strftime("%Y-%m-%d")
+            time_str = dt.strftime("%H:%M:%S")
+        except (ValueError, TypeError):
+            date_str = (run_at[:10] if run_at else "?").ljust(col_widths["date"])
+            time_str = (run_at[11:19] if len(run_at) > 19 else "?").ljust(col_widths["time"])
+
+        signal = str(r.get("final_signal", "?"))
+        conf = r.get("confidence_0_100", "?")
+        close = r.get("last_close", "?")
+        rsi = r.get("rsi_14", "?")
+
+        close_str = f"${close:.2f}" if isinstance(close, (int, float)) else str(close)
+        rsi_str = f"{rsi:.1f}" if isinstance(rsi, (int, float)) else str(rsi)
+        conf_str = str(conf)
+
+        rows.append(
+            f"{date_str:<{col_widths['date']}}"
+            f"  {time_str:<{col_widths['time']}}"
+            f"  {signal:<{col_widths['signal']}}"
+            f"  {conf_str:>{col_widths['conf']}}"
+            f"  {close_str:>{col_widths['close']}}"
+            f"  {rsi_str:>{col_widths['rsi']}}"
+        )
+
+    return "\n".join(rows)
+
+
 if __name__ == "__main__":
     run_backtest(Config())

@@ -208,3 +208,8 @@ __marimo__/
 
 # Project cache data
 data/last_*.json
+
+# Build artifacts and large binaries
+output/
+ui/*/bin/
+ui/*/obj/

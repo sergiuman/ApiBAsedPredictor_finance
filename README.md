@@ -40,9 +40,9 @@ cp .env.example .env
 # Edit .env and add your OPENAI_API_KEY (required) + other keys (optional)
 
 # 4. Run
-python src/main.py          # CLI pipeline
+python -m src.main          # CLI pipeline
 # or
-streamlit run src/app.py   # Interactive Streamlit UI
+python -m streamlit run src/app.py   # Interactive Streamlit UI
 ```
 
 Or use the Makefile:
@@ -107,7 +107,7 @@ make backtest    # Compare past signals to actual returns
 
 ```bash
 source .venv/bin/activate
-python src/main.py
+python -m src.main
 ```
 
 ### Option B: GitHub Actions Cron
