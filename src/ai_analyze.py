@@ -1,4 +1,4 @@
-"""OpenAI-powered news + market analysis with strict JSON output."""
+"""Multi-provider AI analysis: OpenAI, Claude, Google Gemini, Perplexity."""
 
 from __future__ import annotations
 
@@ -14,6 +14,23 @@ from src.news import Article
 from src.utils import Config
 
 logger = logging.getLogger("signal.ai")
+
+# ---------------------------------------------------------------------------
+# Lazy optional imports for additional providers
+# ---------------------------------------------------------------------------
+try:
+    import anthropic as _anthropic
+    _HAS_ANTHROPIC = True
+except ImportError:
+    _HAS_ANTHROPIC = False
+    logger.debug("anthropic package not installed; Claude provider unavailable")
+
+try:
+    import google.generativeai as _genai
+    _HAS_GOOGLE = True
+except ImportError:
+    _HAS_GOOGLE = False
+    logger.debug("google-generativeai package not installed; Google provider unavailable")
 
 # ---------------------------------------------------------------------------
 # Analysis result model
@@ -43,17 +60,15 @@ class AnalysisResult:
         }
 
 
-def _build_prompt(articles: list[Article], market: MarketData, cfg: Config) -> str:
-    """Build the prompt for the OpenAI model."""
-    headlines = []
-    for a in articles[:30]:  # Limit to top 30 to stay within token limits
-        headlines.append({
-            "title": a.title,
-            "source": a.source,
-            "published": a.published,
-            "url": a.url,
-        })
+# ---------------------------------------------------------------------------
+# Prompt builders (shared across all providers)
+# ---------------------------------------------------------------------------
 
+def _build_prompt(articles: list[Article], market: MarketData, cfg: Config) -> str:
+    headlines = [
+        {"title": a.title, "source": a.source, "published": a.published, "url": a.url}
+        for a in articles[:30]
+    ]
     market_info = {
         "ticker": market.ticker,
         "last_close": market.last_close,
@@ -70,7 +85,6 @@ def _build_prompt(articles: list[Article], market: MarketData, cfg: Config) -> s
         "vol_10d_avg": market.vol_10d_avg,
         "vol_vs_avg": market.vol_vs_avg,
     }
-
     return f"""You are a financial analyst assistant. Analyze the following news headlines and market data for {cfg.topic} ({cfg.ticker}).
 
 NEWS HEADLINES:
@@ -98,21 +112,21 @@ Rules:
 
 
 def _build_strict_retry_prompt(articles: list[Article], market: MarketData, cfg: Config) -> str:
-    """Stricter prompt for retry after first parse failure."""
-    base = _build_prompt(articles, market, cfg)
-    return base + """
+    return _build_prompt(articles, market, cfg) + """
 
 CRITICAL: Your previous response was not valid JSON. You MUST return ONLY a raw JSON object.
 Do NOT wrap it in ```json``` or any markdown. Do NOT add any text before or after the JSON.
 The response must start with { and end with }."""
 
 
+# ---------------------------------------------------------------------------
+# Response parser (shared)
+# ---------------------------------------------------------------------------
+
 def _parse_analysis(raw: str) -> AnalysisResult:
     """Parse and validate the AI response. Raises ValueError on failure."""
-    # Strip markdown fences if present
     text = raw.strip()
     if text.startswith("```"):
-        # Remove opening fence
         first_newline = text.index("\n") if "\n" in text else 3
         text = text[first_newline + 1:]
         if text.endswith("```"):
@@ -121,7 +135,6 @@ def _parse_analysis(raw: str) -> AnalysisResult:
 
     data = json.loads(text)
 
-    # Validate required fields
     sentiment = data.get("news_sentiment", "neutral")
     if sentiment not in VALID_SENTIMENTS:
         sentiment = "neutral"
@@ -157,20 +170,18 @@ def _parse_analysis(raw: str) -> AnalysisResult:
     )
 
 
-def _rule_based_fallback(articles: list[Article], market: MarketData) -> AnalysisResult:
-    """Simple rule-based analysis when AI fails."""
-    logger.warning("Using rule-based fallback (AI analysis failed)")
+# ---------------------------------------------------------------------------
+# Rule-based fallback
+# ---------------------------------------------------------------------------
 
-    # Simple heuristic: just use market momentum
+def _rule_based_fallback(articles: list[Article], market: MarketData) -> AnalysisResult:
+    logger.warning("Using rule-based fallback (AI analysis failed)")
     if market.close_vs_sma7 == "above" and market.return_7d_pct > 0:
-        bias = "likely_up"
-        sentiment = "positive"
+        bias, sentiment = "likely_up", "positive"
     elif market.close_vs_sma7 == "below" and market.return_7d_pct < 0:
-        bias = "likely_down"
-        sentiment = "negative"
+        bias, sentiment = "likely_down", "negative"
     else:
-        bias = "uncertain"
-        sentiment = "mixed"
+        bias, sentiment = "uncertain", "mixed"
 
     return AnalysisResult(
         news_sentiment=sentiment,
@@ -192,7 +203,6 @@ def _rule_based_fallback(articles: list[Article], market: MarketData) -> Analysi
 # ---------------------------------------------------------------------------
 
 def _apply_confidence_threshold(result: AnalysisResult, threshold: int) -> AnalysisResult:
-    """Override directional_bias to 'uncertain' if confidence is below threshold."""
     if result.confidence_0_100 < threshold:
         logger.info(
             "Confidence %d below threshold %d; overriding directional_bias to 'uncertain'",
@@ -203,26 +213,19 @@ def _apply_confidence_threshold(result: AnalysisResult, threshold: int) -> Analy
 
 
 # ---------------------------------------------------------------------------
-# Public interface
+# Provider-specific backends
 # ---------------------------------------------------------------------------
 
-def analyze(
-    articles: list[Article],
-    market: MarketData,
-    cfg: Config,
-) -> AnalysisResult:
-    """Run AI analysis on news + market data. Falls back to rules on failure."""
+def _analyze_openai(articles: list[Article], market: MarketData, cfg: Config) -> AnalysisResult:
+    """Analyze using OpenAI API."""
     if not cfg.openai_api_key:
         logger.warning("No OPENAI_API_KEY set, using rule-based fallback")
         return _rule_based_fallback(articles, market)
 
     client = OpenAI(api_key=cfg.openai_api_key)
-
-    # First attempt
     for attempt in range(2):
         prompt_fn = _build_prompt if attempt == 0 else _build_strict_retry_prompt
         prompt = prompt_fn(articles, market, cfg)
-
         try:
             logger.info("Calling OpenAI (%s), attempt %d", cfg.openai_model, attempt + 1)
             response = client.chat.completions.create(
@@ -236,23 +239,148 @@ def analyze(
                 response_format={"type": "json_object"},
             )
             raw = response.choices[0].message.content or ""
-            logger.debug("Raw AI response: %s", raw[:500])
             result = _parse_analysis(raw)
             result = _apply_confidence_threshold(result, cfg.confidence_threshold)
-            logger.info(
-                "AI analysis: sentiment=%s, bias=%s, confidence=%d",
-                result.news_sentiment, result.directional_bias, result.confidence_0_100,
-            )
+            logger.info("OpenAI: sentiment=%s, bias=%s, confidence=%d",
+                        result.news_sentiment, result.directional_bias, result.confidence_0_100)
             return result
-
         except json.JSONDecodeError as exc:
-            logger.warning("JSON parse failed (attempt %d): %s", attempt + 1, exc)
-            if attempt == 0:
-                continue
+            logger.warning("OpenAI JSON parse failed (attempt %d): %s", attempt + 1, exc)
         except Exception as exc:
             logger.error("OpenAI API error (attempt %d): %s", attempt + 1, exc)
-            if attempt == 0:
-                continue
 
-    # Both attempts failed
     return _rule_based_fallback(articles, market)
+
+
+def _analyze_claude(articles: list[Article], market: MarketData, cfg: Config) -> AnalysisResult:
+    """Analyze using Anthropic Claude API."""
+    if not _HAS_ANTHROPIC:
+        logger.error("anthropic package not installed. Install with: pip install anthropic")
+        return _rule_based_fallback(articles, market)
+    if not cfg.claude_api_key:
+        logger.warning("No CLAUDE_API_KEY set, using rule-based fallback")
+        return _rule_based_fallback(articles, market)
+
+    client = _anthropic.Anthropic(api_key=cfg.claude_api_key)  # type: ignore[union-attr]
+    for attempt in range(2):
+        prompt_fn = _build_prompt if attempt == 0 else _build_strict_retry_prompt
+        prompt = prompt_fn(articles, market, cfg)
+        try:
+            logger.info("Calling Claude (%s), attempt %d", cfg.claude_model, attempt + 1)
+            message = client.messages.create(
+                model=cfg.claude_model,
+                max_tokens=1024,
+                system="You are a financial analyst. Respond only with valid JSON.",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = message.content[0].text if message.content else ""
+            result = _parse_analysis(raw)
+            result = _apply_confidence_threshold(result, cfg.confidence_threshold)
+            logger.info("Claude: sentiment=%s, bias=%s, confidence=%d",
+                        result.news_sentiment, result.directional_bias, result.confidence_0_100)
+            return result
+        except json.JSONDecodeError as exc:
+            logger.warning("Claude JSON parse failed (attempt %d): %s", attempt + 1, exc)
+        except Exception as exc:
+            logger.error("Claude API error (attempt %d): %s", attempt + 1, exc)
+
+    return _rule_based_fallback(articles, market)
+
+
+def _analyze_google(articles: list[Article], market: MarketData, cfg: Config) -> AnalysisResult:
+    """Analyze using Google Gemini API."""
+    if not _HAS_GOOGLE:
+        logger.error("google-generativeai package not installed. Install with: pip install google-generativeai")
+        return _rule_based_fallback(articles, market)
+    if not cfg.google_api_key:
+        logger.warning("No GOOGLE_API_KEY set, using rule-based fallback")
+        return _rule_based_fallback(articles, market)
+
+    _genai.configure(api_key=cfg.google_api_key)  # type: ignore[union-attr]
+    model = _genai.GenerativeModel(  # type: ignore[union-attr]
+        cfg.google_model,
+        system_instruction="You are a financial analyst. Respond only with valid JSON.",
+    )
+    for attempt in range(2):
+        prompt_fn = _build_prompt if attempt == 0 else _build_strict_retry_prompt
+        prompt = prompt_fn(articles, market, cfg)
+        try:
+            logger.info("Calling Google Gemini (%s), attempt %d", cfg.google_model, attempt + 1)
+            response = model.generate_content(
+                prompt,
+                generation_config={"temperature": 0.3, "max_output_tokens": 1024},
+            )
+            raw = response.text
+            result = _parse_analysis(raw)
+            result = _apply_confidence_threshold(result, cfg.confidence_threshold)
+            logger.info("Google: sentiment=%s, bias=%s, confidence=%d",
+                        result.news_sentiment, result.directional_bias, result.confidence_0_100)
+            return result
+        except json.JSONDecodeError as exc:
+            logger.warning("Google JSON parse failed (attempt %d): %s", attempt + 1, exc)
+        except Exception as exc:
+            logger.error("Google API error (attempt %d): %s", attempt + 1, exc)
+
+    return _rule_based_fallback(articles, market)
+
+
+def _analyze_perplexity(articles: list[Article], market: MarketData, cfg: Config) -> AnalysisResult:
+    """Analyze using Perplexity API (OpenAI-compatible endpoint)."""
+    if not cfg.perplexity_api_key:
+        logger.warning("No PERPLEXITY_API_KEY set, using rule-based fallback")
+        return _rule_based_fallback(articles, market)
+
+    client = OpenAI(
+        api_key=cfg.perplexity_api_key,
+        base_url="https://api.perplexity.ai",
+    )
+    for attempt in range(2):
+        prompt_fn = _build_prompt if attempt == 0 else _build_strict_retry_prompt
+        prompt = prompt_fn(articles, market, cfg)
+        try:
+            logger.info("Calling Perplexity (%s), attempt %d", cfg.perplexity_model, attempt + 1)
+            response = client.chat.completions.create(
+                model=cfg.perplexity_model,
+                messages=[
+                    {"role": "system", "content": "You are a financial analyst. Respond only with valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=1000,
+            )
+            raw = response.choices[0].message.content or ""
+            result = _parse_analysis(raw)
+            result = _apply_confidence_threshold(result, cfg.confidence_threshold)
+            logger.info("Perplexity: sentiment=%s, bias=%s, confidence=%d",
+                        result.news_sentiment, result.directional_bias, result.confidence_0_100)
+            return result
+        except json.JSONDecodeError as exc:
+            logger.warning("Perplexity JSON parse failed (attempt %d): %s", attempt + 1, exc)
+        except Exception as exc:
+            logger.error("Perplexity API error (attempt %d): %s", attempt + 1, exc)
+
+    return _rule_based_fallback(articles, market)
+
+
+# ---------------------------------------------------------------------------
+# Public interface — dispatches to the selected provider
+# ---------------------------------------------------------------------------
+
+def analyze(
+    articles: list[Article],
+    market: MarketData,
+    cfg: Config,
+) -> AnalysisResult:
+    """Run AI analysis using the configured provider. Falls back to rules on failure."""
+    provider = cfg.ai_provider.lower()
+    logger.info("AI provider: %s", provider)
+
+    if provider == "claude":
+        return _analyze_claude(articles, market, cfg)
+    elif provider == "google":
+        return _analyze_google(articles, market, cfg)
+    elif provider == "perplexity":
+        return _analyze_perplexity(articles, market, cfg)
+    else:
+        # Default: OpenAI
+        return _analyze_openai(articles, market, cfg)
