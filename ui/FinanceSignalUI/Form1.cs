@@ -78,6 +78,16 @@ public class Form1 : Form
     private CancellationTokenSource? _cts;
     private bool _loading; // suppress event-driven saves during LoadSettings
 
+    // History tab
+    private TabControl     _mainTabControl      = null!;
+    private DataGridView   _historyGrid         = null!;
+    private ComboBox       _historyTickerFilter = null!;
+    private DateTimePicker _historyFromDate     = null!;
+    private DateTimePicker _historyToDate       = null!;
+    private Label          _historySummaryLabel = null!;
+    private int            _historySortCol      = 0;
+    private SortOrder      _historySortOrder    = SortOrder.Descending;
+
     // -----------------------------------------------------------------------
     // Constructor
     // -----------------------------------------------------------------------
@@ -96,6 +106,8 @@ public class Form1 : Form
 
         if (string.IsNullOrEmpty(_settings.HistoryFilePath))
             AutoDetectHistoryFile();
+
+        BeginInvoke(LoadHistoryFromFile); // populate history tab after UI is shown
     }
 
     // -----------------------------------------------------------------------
@@ -344,7 +356,35 @@ public class Form1 : Form
             BackColor = Color.FromArgb(210, 215, 228),
         };
 
-        // Results split: grid on top, detail below
+        // Tab control: Current Session | Historical Analysis
+        _mainTabControl = new TabControl
+        {
+            Dock    = DockStyle.Fill,
+            Font    = new Font("Segoe UI", 9f),
+            Padding = new Point(12, 4),
+        };
+
+        var sessionTab = new TabPage { Text = "  Current Session  ", UseVisualStyleBackColor = true };
+        BuildCurrentSessionTab(sessionTab);
+
+        var historyTab = new TabPage { Text = "  Historical Analysis  ", UseVisualStyleBackColor = true };
+        BuildHistoryTab(historyTab);
+
+        _mainTabControl.TabPages.AddRange(new[] { sessionTab, historyTab });
+        _mainTabControl.SelectedIndexChanged += (_, _) =>
+        {
+            if (_mainTabControl.SelectedIndex == 1)
+                LoadHistoryFromFile();
+        };
+
+        // Add in reverse z-order
+        parent.Controls.Add(_mainTabControl);
+        parent.Controls.Add(rule);
+        parent.Controls.Add(aiPanel);
+    }
+
+    private void BuildCurrentSessionTab(TabPage parent)
+    {
         var resultsSplit = new SplitContainer
         {
             Dock             = DockStyle.Fill,
@@ -356,11 +396,158 @@ public class Form1 : Form
         };
         BuildResultsGrid(resultsSplit.Panel1);
         BuildReportBox(resultsSplit.Panel2);
-
-        // Add in reverse z-order
         parent.Controls.Add(resultsSplit);
-        parent.Controls.Add(rule);
-        parent.Controls.Add(aiPanel);
+    }
+
+    private void BuildHistoryTab(TabPage parent)
+    {
+        // ── Filter bar ───────────────────────────────────────────────────────
+        var filterPanel = new Panel
+        {
+            Dock      = DockStyle.Top,
+            Height    = 44,
+            BackColor = Color.FromArgb(248, 249, 252),
+        };
+
+        int x = 10;
+        filterPanel.Controls.Add(new Label
+        {
+            Text = "Ticker:", Location = new Point(x, 14), AutoSize = true,
+            Font = new Font("Segoe UI", 8.5f), ForeColor = Color.FromArgb(60, 70, 95),
+        });
+        x += 50;
+
+        _historyTickerFilter = new ComboBox
+        {
+            Location = new Point(x, 10), Width = 95,
+            DropDownStyle = ComboBoxStyle.DropDown,
+            Font = new Font("Consolas", 9f),
+        };
+        _historyTickerFilter.Items.Add("All Tickers");
+        _historyTickerFilter.SelectedIndex = 0;
+        _historyTickerFilter.SelectedIndexChanged += (_, _) => { if (!_loading) LoadHistoryFromFile(); };
+        filterPanel.Controls.Add(_historyTickerFilter);
+        x += 103;
+
+        filterPanel.Controls.Add(new Label
+        {
+            Text = "From:", Location = new Point(x, 14), AutoSize = true,
+            Font = new Font("Segoe UI", 8.5f), ForeColor = Color.FromArgb(60, 70, 95),
+        });
+        x += 40;
+        _historyFromDate = new DateTimePicker
+        {
+            Location = new Point(x, 10), Width = 100,
+            Format = DateTimePickerFormat.Short, Value = DateTime.Now.AddMonths(-3),
+        };
+        filterPanel.Controls.Add(_historyFromDate);
+        x += 108;
+
+        filterPanel.Controls.Add(new Label
+        {
+            Text = "To:", Location = new Point(x, 14), AutoSize = true,
+            Font = new Font("Segoe UI", 8.5f), ForeColor = Color.FromArgb(60, 70, 95),
+        });
+        x += 28;
+        _historyToDate = new DateTimePicker
+        {
+            Location = new Point(x, 10), Width = 100,
+            Format = DateTimePickerFormat.Short, Value = DateTime.Now,
+        };
+        filterPanel.Controls.Add(_historyToDate);
+        x += 108;
+
+        var refreshBtn = new Button
+        {
+            Text = "⟳  Refresh", Location = new Point(x, 9), Width = 90, Height = 26,
+            FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(0, 115, 207),
+            ForeColor = Color.White, Cursor = Cursors.Hand, Font = new Font("Segoe UI", 8.5f),
+        };
+        refreshBtn.FlatAppearance.BorderSize = 0;
+        refreshBtn.Click += (_, _) => LoadHistoryFromFile();
+        filterPanel.Controls.Add(refreshBtn);
+        x += 98;
+
+        var exportBtn = new Button
+        {
+            Text = "↓  Export CSV", Location = new Point(x, 9), Width = 108, Height = 26,
+            FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(65, 90, 135),
+            ForeColor = Color.White, Cursor = Cursors.Hand, Font = new Font("Segoe UI", 8.5f),
+        };
+        exportBtn.FlatAppearance.BorderSize = 0;
+        exportBtn.Click += ExportHistoryToCsv;
+        filterPanel.Controls.Add(exportBtn);
+
+        // ── Summary bar ──────────────────────────────────────────────────────
+        var summaryPanel = new Panel
+        {
+            Dock = DockStyle.Bottom, Height = 26,
+            BackColor = Color.FromArgb(30, 38, 58),
+        };
+        _historySummaryLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            ForeColor = Color.FromArgb(150, 185, 235),
+            Font = new Font("Segoe UI", 8f),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(10, 0, 0, 0),
+        };
+        summaryPanel.Controls.Add(_historySummaryLabel);
+
+        // ── History DataGridView ─────────────────────────────────────────────
+        var hdrStyle = new DataGridViewCellStyle
+        {
+            BackColor = Color.FromArgb(40, 50, 72), ForeColor = Color.FromArgb(180, 200, 230),
+            Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            SelectionBackColor = Color.FromArgb(40, 50, 72),
+            SelectionForeColor = Color.FromArgb(180, 200, 230),
+        };
+        _historyGrid = new DataGridView
+        {
+            Dock                          = DockStyle.Fill,
+            ReadOnly                      = true,
+            AllowUserToAddRows            = false,
+            AllowUserToDeleteRows         = false,
+            AutoSizeColumnsMode           = DataGridViewAutoSizeColumnsMode.Fill,
+            SelectionMode                 = DataGridViewSelectionMode.FullRowSelect,
+            RowHeadersVisible             = false,
+            BackgroundColor               = Color.White,
+            BorderStyle                   = BorderStyle.None,
+            GridColor                     = Color.FromArgb(225, 230, 240),
+            Font                          = new Font("Segoe UI", 8.5f),
+            ColumnHeadersDefaultCellStyle = hdrStyle,
+            EnableHeadersVisualStyles     = false,
+            ColumnHeadersHeight           = 26,
+            RowTemplate                   = { Height = 23 },
+            DefaultCellStyle              = { SelectionBackColor = Color.FromArgb(215, 230, 252), SelectionForeColor = Color.Black },
+            AllowUserToOrderColumns       = true,
+        };
+
+        DataGridViewTextBoxColumn HC(string name, string hdr, int fw)
+        {
+            var c = new DataGridViewTextBoxColumn { Name = name, HeaderText = hdr, FillWeight = fw };
+            c.SortMode = DataGridViewColumnSortMode.Programmatic;
+            return c;
+        }
+        _historyGrid.Columns.AddRange(
+            HC("RunAt",      "Date / Time (UTC)", 118),
+            HC("HTicker",    "Ticker",              58),
+            HC("HSignal",    "Signal",             140),
+            HC("HConf",      "Conf",                42),
+            HC("HSentiment", "Sentiment",            68),
+            HC("HClose",     "Close ($)",            65),
+            HC("HReturn7d",  "7d Ret %",             62),
+            HC("HVsSMA7",    "vs SMA7",              55),
+            HC("HRSI14",     "RSI-14",               48)
+        );
+        _historyGrid.ColumnHeaderMouseClick += HistoryGrid_ColumnHeaderClick;
+
+        // Add in reverse z-order (last added = z=0 = processed first)
+        // Want: filterPanel top, _historyGrid fill, summaryPanel bottom
+        // So: _historyGrid first, filterPanel second, summaryPanel last
+        parent.Controls.Add(_historyGrid);
+        parent.Controls.Add(filterPanel);
+        parent.Controls.Add(summaryPanel);
     }
 
     private void BuildAiProviderPanel(Panel parent)
@@ -991,6 +1178,7 @@ public class Form1 : Form
                 SetStatus(ct.IsCancellationRequested
                     ? "Run cancelled."
                     : $"Done — {selected.Count} ticker(s) analyzed.");
+                LoadHistoryFromFile(); // refresh history cache after run
             });
         }, ct);
     }
@@ -1183,6 +1371,212 @@ public class Form1 : Form
 
     private static string GetStr(JsonElement el, string key) =>
         el.TryGetProperty(key, out var p) ? p.ToString() : "";
+
+    // -----------------------------------------------------------------------
+    // History tab — load, filter, sort, export
+    // -----------------------------------------------------------------------
+
+    private void LoadHistoryFromFile()
+    {
+        var path = _historyFileBox?.Text.Trim() ?? "";
+        if (!File.Exists(path))
+        {
+            if (_historyGrid != null) _historyGrid.Rows.Clear();
+            if (_historySummaryLabel != null)
+                _historySummaryLabel.Text = $"  History file not found: {(string.IsNullOrEmpty(path) ? "(not configured)" : path)}";
+            return;
+        }
+
+        // ── Read all records from file ───────────────────────────────────────
+        var all = new List<JsonElement>();
+        try
+        {
+            foreach (var line in File.ReadLines(path, Encoding.UTF8))
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrEmpty(trimmed)) continue;
+                try { all.Add(JsonDocument.Parse(trimmed).RootElement.Clone()); }
+                catch { /* skip malformed */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            _historySummaryLabel.Text = $"  Error reading file: {ex.Message}";
+            return;
+        }
+
+        // ── Update ticker dropdown ───────────────────────────────────────────
+        var uniqueTickers = all
+            .Where(r => r.TryGetProperty("ticker", out _))
+            .Select(r => r.GetProperty("ticker").GetString() ?? "")
+            .Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t)
+            .ToList();
+
+        var prevSelection = _historyTickerFilter.Text;
+        _loading = true;
+        _historyTickerFilter.Items.Clear();
+        _historyTickerFilter.Items.Add("All Tickers");
+        foreach (var t in uniqueTickers) _historyTickerFilter.Items.Add(t);
+        _historyTickerFilter.Text = uniqueTickers.Contains(prevSelection, StringComparer.OrdinalIgnoreCase)
+            ? prevSelection : "All Tickers";
+        _loading = false;
+
+        // ── Apply filters ────────────────────────────────────────────────────
+        var tickerFilter = _historyTickerFilter.Text.Trim();
+        var filterByTicker = !string.IsNullOrEmpty(tickerFilter) &&
+                             !tickerFilter.Equals("All Tickers", StringComparison.OrdinalIgnoreCase);
+        var fromUtc = _historyFromDate.Value.Date.ToUniversalTime();
+        var toUtc   = _historyToDate.Value.Date.AddDays(1).ToUniversalTime(); // inclusive
+
+        var filtered = all.Where(r =>
+        {
+            if (filterByTicker)
+            {
+                if (!r.TryGetProperty("ticker", out var tp)) return false;
+                if (!string.Equals(tp.GetString(), tickerFilter, StringComparison.OrdinalIgnoreCase)) return false;
+            }
+            if (r.TryGetProperty("run_at", out var ra) &&
+                DateTimeOffset.TryParse(ra.GetString(), out var dt))
+            {
+                var utc = dt.UtcDateTime;
+                return utc >= fromUtc && utc < toUtc;
+            }
+            return true;
+        }).ToList();
+
+        // ── Sort (default: newest first by RunAt) ────────────────────────────
+        filtered.Sort((a, b) =>
+        {
+            var ta = a.TryGetProperty("run_at", out var pa) && DateTimeOffset.TryParse(pa.GetString(), out var da) ? da : DateTimeOffset.MinValue;
+            var tb = b.TryGetProperty("run_at", out var pb) && DateTimeOffset.TryParse(pb.GetString(), out var db) ? db : DateTimeOffset.MinValue;
+            return _historySortOrder == SortOrder.Descending ? tb.CompareTo(ta) : ta.CompareTo(tb);
+        });
+
+        // ── Populate grid ────────────────────────────────────────────────────
+        _historyGrid.Rows.Clear();
+        int rowIdx = 0;
+        foreach (var r in filtered)
+        {
+            string runAt = "";
+            if (r.TryGetProperty("run_at", out var rp) &&
+                DateTimeOffset.TryParse(rp.GetString(), out var dt))
+                runAt = dt.UtcDateTime.ToString("yyyy-MM-dd  HH:mm") + " UTC";
+
+            var ticker    = GetStr(r, "ticker");
+            var signal    = GetStr(r, "final_signal");
+            var conf      = GetStr(r, "confidence_0_100");
+            var sentiment = GetStr(r, "news_sentiment");
+            var close     = r.TryGetProperty("last_close",    out var cp) ? $"{cp.GetDouble():F2}" : "";
+            var ret7d     = r.TryGetProperty("return_7d_pct", out var rp2) ? $"{rp2.GetDouble():+0.00;-0.00}%" : "";
+            var vsSma7    = GetStr(r, "close_vs_sma7");
+            var rsi       = r.TryGetProperty("rsi_14",        out var ri) ? $"{ri.GetDouble():F1}" : "";
+
+            _historyGrid.Rows.Add(runAt, ticker, signal.Replace("_", " ").ToUpperInvariant(),
+                conf, sentiment, close, ret7d, vsSma7, rsi);
+
+            var row = _historyGrid.Rows[rowIdx];
+            row.DefaultCellStyle.BackColor = rowIdx % 2 == 0 ? Color.White : Color.FromArgb(247, 250, 255);
+
+            row.Cells["HSignal"].Style.Font      = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+            row.Cells["HSignal"].Style.ForeColor = signal switch
+            {
+                "high_conviction_up"   => Color.FromArgb(0, 155, 75),
+                "likely_up"            => Color.FromArgb(30, 130, 60),
+                "high_conviction_down" => Color.FromArgb(180, 0, 0),
+                "likely_down"          => Color.FromArgb(200, 40, 40),
+                _                      => Color.FromArgb(175, 105, 0),
+            };
+            rowIdx++;
+        }
+
+        // ── Update sort glyph ────────────────────────────────────────────────
+        foreach (DataGridViewColumn col in _historyGrid.Columns)
+            col.HeaderCell.SortGlyphDirection = SortOrder.None;
+        if (_historySortCol < _historyGrid.Columns.Count)
+            _historyGrid.Columns[_historySortCol].HeaderCell.SortGlyphDirection = _historySortOrder;
+
+        // ── Update summary bar ───────────────────────────────────────────────
+        UpdateHistorySummary(all, filtered);
+    }
+
+    private void HistoryGrid_ColumnHeaderClick(object? sender, DataGridViewCellMouseEventArgs e)
+    {
+        if (e.ColumnIndex == _historySortCol)
+            _historySortOrder = _historySortOrder == SortOrder.Ascending
+                ? SortOrder.Descending : SortOrder.Ascending;
+        else
+        {
+            _historySortCol   = e.ColumnIndex;
+            _historySortOrder = SortOrder.Descending;
+        }
+        LoadHistoryFromFile(); // re-sort
+    }
+
+    private void UpdateHistorySummary(List<JsonElement> all, List<JsonElement> filtered)
+    {
+        // Aggregate per-ticker signal counts from the filtered set
+        var groups = filtered
+            .GroupBy(r => GetStr(r, "ticker").ToUpperInvariant())
+            .OrderBy(g => g.Key);
+
+        var parts = new List<string>
+        {
+            $"{filtered.Count} record{(filtered.Count != 1 ? "s" : "")} shown  ({all.Count} total)",
+        };
+
+        foreach (var g in groups)
+        {
+            int up   = g.Count(r => GetStr(r, "final_signal").Contains("up"));
+            int down = g.Count(r => GetStr(r, "final_signal").Contains("down"));
+            int unc  = g.Count() - up - down;
+            parts.Add($"{g.Key}: {g.Count()} ({up}↑ {down}↓ {unc}?)");
+        }
+
+        _historySummaryLabel.Text = "  " + string.Join("   |   ", parts);
+    }
+
+    private void ExportHistoryToCsv(object? sender, EventArgs e)
+    {
+        if (_historyGrid.Rows.Count == 0)
+        {
+            MessageBox.Show("No records to export. Load history first.", "Nothing to Export",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dlg = new SaveFileDialog
+        {
+            Title    = "Export History to CSV",
+            Filter   = "CSV files (*.csv)|*.csv",
+            FileName = $"signal_history_{DateTime.Now:yyyyMMdd_HHmm}.csv",
+        };
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+
+        try
+        {
+            var sb = new StringBuilder();
+            // Header row
+            var headers = _historyGrid.Columns.Cast<DataGridViewColumn>()
+                .Select(c => $"\"{c.HeaderText}\"");
+            sb.AppendLine(string.Join(",", headers));
+            // Data rows
+            foreach (DataGridViewRow row in _historyGrid.Rows)
+            {
+                var cells = row.Cells.Cast<DataGridViewCell>()
+                    .Select(c => $"\"{(c.Value?.ToString() ?? "").Replace("\"", "\"\"")}\"");
+                sb.AppendLine(string.Join(",", cells));
+            }
+            File.WriteAllText(dlg.FileName, sb.ToString(), Encoding.UTF8);
+            SetStatus($"Exported {_historyGrid.Rows.Count} records → {Path.GetFileName(dlg.FileName)}");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Export failed:\n{ex.Message}", "Export Error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
 
     // -----------------------------------------------------------------------
     // UI helpers
