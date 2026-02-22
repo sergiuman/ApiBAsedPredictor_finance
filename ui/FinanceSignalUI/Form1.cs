@@ -107,7 +107,7 @@ public class Form1 : Form
         if (string.IsNullOrEmpty(_settings.HistoryFilePath))
             AutoDetectHistoryFile();
 
-        BeginInvoke(LoadHistoryFromFile); // populate history tab after UI is shown
+        Load += (_, _) => LoadHistoryFromFile(); // populate history tab after handle is created
     }
 
     // -----------------------------------------------------------------------
